@@ -1,32 +1,36 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/smtp"
 	"sync"
+	"text/template"
+	"time"
 )
 
-func email_worker(id int, ch <-chan Recipient, wg *sync.WaitGroup) {
+func emailWorker(id int, ch <-chan Recipient, wg *sync.WaitGroup, tmpl *template.Template, cfg Config, rateLimiter <-chan time.Time) {
 	defer wg.Done()
 	for recipient := range ch {
-		smtpHost := "localHost"
-		smtpPort := "1025"
+		if rateLimiter != nil {
+			<-rateLimiter
+		}
 
+		addr := cfg.SMTPHost + ":" + cfg.SMTPPort
 		// formattedMsg := fmt.Sprintf("To : %s\r\nSubject: Test Email\r\n\n%s\r\n", recipient.Email, "Just testing the email campaign")
-		msg, err := executeTemplate(recipient)
+		msg, err := executeTemplate(tmpl, recipient)
 
 		if err != nil {
-			fmt.Printf("Error")
+			log.Printf("[Worker %d] Template error for %s: %v\n", id, recipient.Email, err)
 			continue
 		}
 
-		err = smtp.SendMail(smtpHost+":"+smtpPort, nil, "rythammaalpani44@gmail.com", []string{recipient.Email}, []byte(msg))
+		err = smtp.SendMail(addr, nil, cfg.SenderEmail, []string{recipient.Email}, []byte(msg))
 
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("[Worker %d] Failed to send email to %s: %v\n", id, recipient.Email, err)
+			continue
 		}
 
-		fmt.Println(id, " ", recipient.Email, " ", recipient.Name)
+		log.Printf("[Worker %d] Sent email to %s (%s)\n", id, recipient.Name, recipient.Email)
 	}
 }
